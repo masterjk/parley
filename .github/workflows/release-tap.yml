@@ -1,0 +1,95 @@
+# Bump the Homebrew tap formula whenever a new GitHub release is published.
+#
+# Fires on `release: published` (created manually with `gh release create`
+# or via the GitHub UI). Downloads the source tarball for the new tag,
+# computes its SHA256, fetches the current Formula/parley.rb from the
+# tap, rewrites the parley `url` + `sha256` lines, and commits the
+# result back. Resource blocks (prompt_toolkit, wcwidth) are not
+# touched — pin those in the tap manually when you bump them.
+#
+# Why inline instead of mislav/bump-homebrew-formula-action:
+#   The action's v3 / v4 hardcode `statusCode == 302` when following the
+#   tarball redirect. GitHub started returning 303 (not 302) on those
+#   redirects in May 2026, so the action throws "unexpected HTTP 303
+#   response" before doing any work. See mislav/bump-homebrew-formula-action#340
+#   (open). The inline script below side-steps the bug by following
+#   redirects via plain `curl -L`.
+#
+# Setup (one-time):
+#   1. Create a fine-grained PAT scoped to `masterjk/homebrew-parley`
+#      with `Contents: read & write` permission.
+#   2. In this repo's Settings → Secrets and variables → Actions, add
+#      it as `HOMEBREW_TAP_TOKEN`.
+#
+# After that: `gh release create v0.x.y` triggers a tap commit in <1 min.
+
+name: Bump Homebrew tap formula on release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  bump:
+    name: Bump masterjk/homebrew-parley
+    runs-on: ubuntu-latest
+    env:
+      TAP: masterjk/homebrew-parley
+      FORMULA: Formula/parley.rb
+    steps:
+      - name: Bump tap formula
+        env:
+          PAT: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          TARBALL="https://github.com/${{ github.repository }}/archive/refs/tags/${TAG}.tar.gz"
+          SHA=$(curl -sL "$TARBALL" | shasum -a 256 | awk '{print $1}')
+          echo "tarball: $TARBALL"
+          echo "sha256:  $SHA"
+
+          # Fetch current formula via the contents API.
+          curl -sfL \
+            -H "Authorization: Bearer $PAT" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${TAP}/contents/${FORMULA}" > current.json
+          CURRENT_BLOB_SHA=$(jq -r .sha current.json)
+          jq -r .content current.json | base64 -d > parley.rb
+
+          # Rewrite ONLY the parley url + the sha256 immediately following it.
+          # Resource blocks (prompt_toolkit, wcwidth) have their own url/sha256
+          # lines but with different hostnames; the regex anchors on
+          # github.com/<repo>/parley/ so they're skipped.
+          TAG="$TAG" SHA="$SHA" REPO="${{ github.repository }}" python3 - <<'PY'
+          import re, os
+          tag = os.environ['TAG']
+          sha = os.environ['SHA']
+          repo = re.escape(os.environ['REPO'])
+          text = open('parley.rb').read()
+          text, n1 = re.subn(
+              rf'(url "https://github\.com/{repo}/archive/refs/tags/)[^"]+(\.tar\.gz")',
+              rf'\g<1>{tag}\g<2>', text, count=1)
+          text, n2 = re.subn(
+              rf'(url "https://github\.com/{repo}/archive/refs/tags/[^"]+"\s*\n\s*sha256 ")[^"]+(")',
+              rf'\g<1>{sha}\g<2>', text, count=1)
+          if (n1, n2) != (1, 1):
+              raise SystemExit(f'expected 1 url + 1 sha replacement, got url={n1} sha={n2}')
+          open('parley.rb', 'w').write(text)
+          PY
+
+          # PUT it back. If contents are byte-identical to current, GitHub
+          # accepts the request and returns 200 without creating a commit.
+          NEW_CONTENT=$(base64 -w0 parley.rb)
+          jq -n \
+            --arg message "parley ${TAG}" \
+            --arg sha     "${CURRENT_BLOB_SHA}" \
+            --arg content "${NEW_CONTENT}" \
+            '{message:$message, sha:$sha, content:$content}' > payload.json
+
+          curl -sfL -X PUT \
+            -H "Authorization: Bearer $PAT" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            --data @payload.json \
+            "https://api.github.com/repos/${TAP}/contents/${FORMULA}"

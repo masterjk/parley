@@ -1,0 +1,81 @@
+###############################################################################
+# parley.rb — Homebrew formula template
+#
+# This is a TEMPLATE. Before publishing to a tap, you must:
+#
+#   1. Replace __OWNER__ with the GitHub org/user that owns the parley repo.
+#   2. Replace __VERSION__ with the released tag (e.g. 0.1.0).
+#   3. Compute and replace __PARLEY_SHA256__ for the release tarball:
+#        curl -L https://github.com/__OWNER__/parley/archive/refs/tags/v__VERSION__.tar.gz \
+#          | shasum -a 256
+#   4. Compute and replace the __*_SHA256__ values for each Python resource:
+#        brew fetch --build-from-source ./parley.rb
+#      (or `pip download <pkg>==<ver>` then `shasum -a 256` the sdist).
+#
+# Install into a tap with:
+#   brew tap __OWNER__/parley
+#   brew install parley
+#
+# `claude` and `codex` CLIs are intentionally NOT declared as dependencies
+# (they have no Homebrew formula). `parley doctor` will detect missing
+# versions at first run with install hints.
+###############################################################################
+
+class Parley < Formula
+  desc "Two AI agents debate at a tmux table and return a joint recommendation"
+  homepage "https://github.com/__OWNER__/parley"
+  url "https://github.com/__OWNER__/parley/archive/refs/tags/v__VERSION__.tar.gz"
+  sha256 "__PARLEY_SHA256__"
+  license "MIT"
+
+  depends_on "tmux"
+  depends_on "python@3"
+
+  resource "prompt_toolkit" do
+    url "https://files.pythonhosted.org/packages/source/p/prompt_toolkit/prompt_toolkit-3.0.52.tar.gz"
+    sha256 "__PROMPT_TOOLKIT_SHA256__"
+  end
+
+  resource "wcwidth" do
+    url "https://files.pythonhosted.org/packages/source/w/wcwidth/wcwidth-0.2.13.tar.gz"
+    sha256 "__WCWIDTH_SHA256__"
+  end
+
+  def install
+    venv = libexec/"venv"
+    system "python3", "-m", "venv", venv
+
+    # Install vendored Python deps into the venv so users don't need them
+    # on their system Python.
+    resources.each do |r|
+      r.stage do
+        system venv/"bin/pip", "install", "--no-deps", "."
+      end
+    end
+
+    # Sync the wrapper's hardcoded VERSION="dev" with the tag brew is
+    # installing. Without this, `parley --version` reports "dev" forever
+    # regardless of which tag was published.
+    inreplace "parley", /^VERSION=".*"$/, %Q(VERSION="#{version}")
+
+    # Place every script under libexec; the brew-managed `bin/parley` shim
+    # below puts the venv's python on PATH so start.sh's `python3 ...` lines
+    # resolve to the vendored interpreter.
+    libexec.install "parley"
+    libexec.install "bin"
+
+    (bin/"parley").write <<~SH
+      #!/bin/bash
+      exec env PATH="#{venv}/bin:$PATH" "#{libexec}/parley" "$@"
+    SH
+    chmod 0755, bin/"parley"
+  end
+
+  test do
+    assert_match "parley #{version}", shell_output("#{bin}/parley --version")
+    # `parley doctor` is allowed to exit non-zero (claude/codex may be absent
+    # in the build sandbox); we only care that it runs and reports a verdict.
+    output = shell_output("#{bin}/parley doctor 2>&1", 1)
+    assert_match(/tmux:|python3:|claude:|codex:/, output)
+  end
+end

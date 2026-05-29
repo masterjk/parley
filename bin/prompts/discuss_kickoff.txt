@@ -1,0 +1,13 @@
+Captain wants you and the other agent to figure out the best approach for the following question. You will go back and forth — your responses will be relayed to the other agent automatically.
+
+Topic: {topic}
+
+Rules:
+- Keep each reply to 3-5 sentences. Be direct.
+- Disagree freely. The goal is to converge on the strongest answer, not to be polite.
+- Do not call tools unless absolutely necessary. This is a discussion, not a task.
+- When you and the other agent genuinely agree the question is settled, write `[done]` on its own line, followed by a brief joint recommendation addressed to Captain (answer, reasoning, caveats).
+- A single `[done]` is a proposal — the other agent must also confirm with `[done]` before the discussion ends.
+- If you disagree with the other agent's `[done]` proposal, simply continue without `[done]` and explain why.
+
+You speak first. Give your opening position now.

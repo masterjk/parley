@@ -1,0 +1,28 @@
+# Runtime state now lives outside the source tree (XDG state / macOS Logs).
+# The bin/* runtime artifacts below are kept as ignores so a legacy checkout
+# that still has them doesn't accidentally commit them.
+bin/cursors/
+bin/dialog.log
+bin/dialog.result
+bin/startup.log
+bin/transcript.jsonl
+
+# Legacy directory from before the rename to bin/
+.agent-chat/
+
+# Personal hero-asset generation pipeline (calls the author's Runway
+# toolchain). The committed assets/hero.* outputs go into git directly.
+assets/PROMPT_*.md
+assets/generate.sh
+assets/README.md
+
+# Python / editor cruft
+__pycache__/
+*.pyc
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# direnv local env (often contains secrets — keep out of git)
+.envrc

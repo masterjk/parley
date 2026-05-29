@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# parley — launch a tmux workspace with Claude Code + Codex CLI side-by-side
+# and a relay/orchestrator for agent-to-agent discussion.
+set -euo pipefail
+
+# Source checkouts report VERSION="dev" so they're visibly distinct from
+# Homebrew installs. The brew formula rewrites this line at install time
+# via `inreplace` so the released version reflects the tag the user got.
+VERSION="dev"
+
+# Resolve symlinks so `brew install` and any other symlinked invocation finds
+# the real repo root (bin/start.sh lives next to this script).
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+ROOT="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+
+case "${1:-}" in
+  -h|--help)
+    cat <<EOF
+parley — two AI agents debate at a tmux table and return a joint recommendation.
+
+Usage:
+  parley                run the workspace (Claude + Codex side-by-side)
+  parley doctor         check that tmux, python, prompt_toolkit, claude, and codex are ready
+  parley --version      print version
+  parley --help         show this message
+
+Inside the relay pane:
+  @claude <msg>         route to Claude only
+  @codex  <msg>         route to Codex only
+  <msg>                 broadcast to both
+  /discuss <topic>      agent-to-agent debate; ends with a joint recommendation
+  /discuss off          stop the debate and close its strip
+  /status               check whether a debate is running
+  /quit                 kill the tmux session
+
+Docs: https://github.com/masterjk/parley
+EOF
+    exit 0
+    ;;
+  -V|--version)
+    echo "parley $VERSION"
+    exit 0
+    ;;
+  doctor)
+    shift
+    exec python3 "$ROOT/bin/doctor.py" "$@"
+    ;;
+esac
+
+exec "$ROOT/bin/start.sh" "$@"
