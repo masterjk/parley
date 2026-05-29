@@ -2,14 +2,18 @@
 """Dialogue orchestrator: makes Claude and Codex discuss a topic between themselves.
 
 Usage:
-  discuss.py <topic...>
+  discuss.py [@claude|@codex] <topic...>
+
+  The optional leading @claude or @codex forces who speaks first; without it
+  the starter is chosen randomly (the original behavior).
 
 Environment:
   CLAUDE_PANE, CODEX_PANE  tmux pane ids
   WORK_DIR                              parley project root
 
 Behavior:
-  1. Randomly choose a first speaker and send the kickoff with the topic.
+  1. Pick the first speaker (explicit @claude/@codex, else random) and send
+     the kickoff with the topic.
   2. Poll Claude's session JSONL. When its turn is complete (quiescent for QUIET_SECS),
      extract assistant text, forward to Codex.
   3. Poll Codex's session JSONL similarly. Forward back to Claude.
@@ -230,8 +234,13 @@ def cleanup() -> None:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        sys.exit("usage: discuss.py <topic...>")
-    topic = " ".join(sys.argv[1:]).strip()
+        sys.exit("usage: discuss.py [@claude|@codex] <topic...>")
+
+    args = sys.argv[1:]
+    starter: str | None = None
+    if args and args[0].lower() in ("@claude", "@codex"):
+        starter = args.pop(0).lower().lstrip("@")
+    topic = " ".join(args).strip()
     if not topic:
         sys.exit("empty topic")
 
@@ -253,12 +262,12 @@ def main() -> None:
     signal.signal(signal.SIGINT, on_stop)
 
     try:
-        run(topic)
+        run(topic, starter=starter)
     finally:
         cleanup()
 
 
-def run(topic: str) -> None:
+def run(topic: str, starter: str | None = None) -> None:
     kickoff_template = (BIN_DIR / "prompts" / "discuss_kickoff.txt").read_text()
     kickoff = kickoff_template.replace("{topic}", topic)
 
@@ -269,9 +278,10 @@ def run(topic: str) -> None:
     claude_cur = current_max_ts("claude")
     codex_cur = current_max_ts("codex")
 
-    # Pick a random first speaker
-    first = random.choice(["claude", "codex"])
+    # First speaker: explicit if @claude/@codex was given, otherwise random.
+    first = starter if starter in ("claude", "codex") else random.choice(["claude", "codex"])
     second = "codex" if first == "claude" else "claude"
+    log(f"first speaker: {first}" + (" (explicit)" if starter else " (random)"))
     panes = {"claude": CLAUDE_PANE, "codex": CODEX_PANE}
     cursors = {"claude": claude_cur, "codex": codex_cur}
     counts = {"claude": 0, "codex": 0}
