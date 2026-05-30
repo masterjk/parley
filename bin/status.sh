@@ -50,7 +50,6 @@ REFRESH_EVERY=20
 i=0
 refresh=0
 while true; do
-  NOW=$(date '+%H:%M:%S')
   SPINNER="${SPIN[i]}"
   i=$(( (i + 1) % SLEN ))
 
@@ -116,7 +115,7 @@ while true; do
 
   # Plain widths for padding math (escapes don't take visible cells)
   LEFT_PLAIN="  ${APP} ${VERSION}${AGENTS_PLAIN}"
-  RIGHT_PLAIN="${NOW}  │  status: ${STATE_PLAIN}  "
+  RIGHT_PLAIN="status: ${STATE_PLAIN}  "
 
   # Use tmux's pane width — more reliable than tput inside a 1-row pane.
   COLS=$(tmux display-message -p -t "${TMUX_PANE:-}" '#{pane_width}' 2>/dev/null)
@@ -130,7 +129,6 @@ while true; do
   printf '  %s%s%s %s%s%s' "$TITLE" "$APP" "$DEF" "$VER" "$VERSION" "$DEF"
   printf '%s' "$AGENTS_COLORED"
   printf '%*s' "$PAD" ""
-  printf '%s%s%s  %s│%s  ' "$TIMECOL" "$NOW" "$DEF" "$SEP" "$DEF"
   printf 'status: %s  ' "$STATE_COLORED"
   printf '\033[K%s' "$RESET"
 
