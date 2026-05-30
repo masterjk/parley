@@ -101,6 +101,103 @@ CLAUDE_PANE=$(tmux display-message -t "$SESSION" -p '#{pane_id}')
 tmux set-option -t "$SESSION" mouse on
 tmux set-option -t "$SESSION" history-limit 50000
 
+# Auto-copy mouse selections to the system clipboard. tmux's default fills
+# only its own paste buffer; piping the selection through the OS clipboard
+# tool on drag-release makes the selection available to paste (Cmd-V / Ctrl-V)
+# in other apps. Detect the clipboard command per-platform and skip silently
+# if none is present so the binding never errors on a headless box. The
+# bind-key is server-global (tmux has no per-session key tables), so it
+# applies to copy-mode everywhere, not just the parley session.
+if command -v pbcopy >/dev/null 2>&1; then
+  PARLEY_CLIP="pbcopy"                              # macOS
+elif command -v wl-copy >/dev/null 2>&1; then
+  PARLEY_CLIP="wl-copy"                             # Linux / Wayland
+elif command -v xclip >/dev/null 2>&1; then
+  PARLEY_CLIP="xclip -selection clipboard"          # Linux / X11
+elif command -v xsel >/dev/null 2>&1; then
+  PARLEY_CLIP="xsel --clipboard --input"            # Linux / X11 (alt)
+else
+  PARLEY_CLIP=""
+fi
+if [ -n "$PARLEY_CLIP" ]; then
+  # On a successful copy, announce it. tmux >= 3.2 has display-popup, so we
+  # flash a small box right at the mouse (-x M -y M) — where the user's eyes
+  # already are — far more obvious than a status-line toast. Older tmux falls
+  # back to a bright bold inline-styled status message.
+  #
+  # Both notify forms must run *after* the copy in the SAME key binding:
+  # display-popup's mouse position only resolves inside the triggering event's
+  # context, so (unlike a plain toast) it can't be folded into the copy-pipe
+  # shell command. Chaining two commands onto one binding from the shell is the
+  # catch — "tmux bind-key ... \; <cmd>" runs <cmd> immediately instead of
+  # binding it, and brace blocks don't survive shell quoting. The reliable fix
+  # is to write the brace-block binding to a temp file and source-file it,
+  # where tmux parses the multi-command block natively.
+  case "$TMUX_VER_RAW" in
+    *.*) TMUX_MINOR=${TMUX_VER_RAW#*.}; TMUX_MINOR=${TMUX_MINOR%%.*} ;;
+    *)   TMUX_MINOR=0 ;;
+  esac
+  case "$TMUX_MINOR" in ''|*[!0-9]*) TMUX_MINOR=0 ;; esac
+  TMUX_NUM=$(( ${TMUX_MAJOR:-0} * 100 + TMUX_MINOR ))
+  if [ "$TMUX_NUM" -ge 304 ]; then
+    # tmux 3.4+ has the popup style flags (-s content, -S border, -b lines):
+    # a solid green block with black bold text and a rounded green border, so
+    # the toast reads as a highlighted (inverse) chip at the mouse.
+    PARLEY_NOTIFY="display-popup -E -b rounded -s 'bg=green,fg=black,bold' -S 'fg=black,bg=green' -w 30 -h 3 -x M -y M \"printf '  ✓  Copied to clipboard  '; sleep 0.6\""
+  else
+    # Older tmux (no popup, or popup without style flags): bright inline-styled
+    # status message — green background, black bold text — at the bottom.
+    PARLEY_NOTIFY="display-message \"#[bg=green,fg=black,bold]  ✓  Copied to clipboard  #[default]\""
+  fi
+  PARLEY_COPY_CONF=$(mktemp -t parley-copy.XXXXXX)
+  # Four bindings, all routed through the same clipboard tool + notify:
+  #   - MouseDragEnd1Pane (copy-mode / -vi): drag-select then release.
+  #   - DoubleClick1Pane (root): select the word under the cursor.
+  #   - TripleClick1Pane (root): select the whole line.
+  # The click bindings mirror tmux's built-in defaults (select-pane, then the
+  # #{pane_in_mode}/#{mouse_any_flag} guard that passes the click through to a
+  # mode or a mouse-grabbing app) and only add the clipboard pipe + notify on
+  # the copy branch. We drop the default's "run-shell -d 0.3" highlight dwell:
+  # it sits between select and copy and would delay the popup, and our popup is
+  # the feedback now anyway — removing it also keeps the mouse position fresh
+  # for the popup's -x M -y M.
+  cat > "$PARLEY_COPY_CONF" <<EOF
+bind-key -T copy-mode MouseDragEnd1Pane {
+  send-keys -X copy-pipe-and-cancel "$PARLEY_CLIP"
+  $PARLEY_NOTIFY
+}
+bind-key -T copy-mode-vi MouseDragEnd1Pane {
+  send-keys -X copy-pipe-and-cancel "$PARLEY_CLIP"
+  $PARLEY_NOTIFY
+}
+bind-key -T root DoubleClick1Pane {
+  select-pane -t =
+  if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" {
+    send-keys -M
+  } {
+    copy-mode -H
+    send-keys -X select-word
+    send-keys -X copy-pipe-and-cancel "$PARLEY_CLIP"
+    $PARLEY_NOTIFY
+  }
+}
+bind-key -T root TripleClick1Pane {
+  select-pane -t =
+  if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" {
+    send-keys -M
+  } {
+    copy-mode -H
+    send-keys -X select-line
+    send-keys -X copy-pipe-and-cancel "$PARLEY_CLIP"
+    $PARLEY_NOTIFY
+  }
+}
+EOF
+  tmux source-file "$PARLEY_COPY_CONF" \
+    || echo "parley: clipboard copy-notify binding failed to load" >&2
+  rm -f "$PARLEY_COPY_CONF"
+fi
+
 # Status strip ABOVE Claude (-b -v), don't move focus (-d). Height 2: the top
 # row is the pane border (carries the [CLAUDE]/[CODEX]/... label once
 # pane-border-status is enabled below), the bottom row is status.sh output.
