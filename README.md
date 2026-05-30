@@ -18,27 +18,6 @@ Run **Claude Code** and **Codex CLI** side-by-side in a single tmux workspace. A
 If that rings a bell — yes, it's the same *parley* invoked in *Pirates of the Caribbean*, where it's a clause in the Pirate Code: anyone who calls it has the right to safe passage and a hearing before the captain. Same idea here: when you call `/discuss`, the two agents have to come to the table and talk it out before either gets to dismiss the question.
 
 
-## Demo
-
-### &raquo; Talk to either.  Or both.
-
-`@claude` or `@codex` targets one agent.  Plain text broadcasts to both.  Two takes, side-by-side, one workspace — no alt-tabbing, no copy-paste between terminals.
-
-<img src="./docs/images/intro.gif" alt="parley routing demo" />
-
-
-### &raquo; Or hand them a topic and walk away.
-
-`/discuss <topic>` makes them debate it out. They go back and forth automatically, each pushing back on the other's claims, until both write `[done]` — then the joint recommendation lands in front of you. One command, then hands-off.
-
-<img src="./docs/images/discuss.gif" alt="parley /discuss demo" />
-
-
-## Why
-
-You already have two strong coding assistants. They each have blind spots. Triangulating their opinions on a hard call usually means alt-tabbing, copy-pasting, and translating between contexts. parley does that for you in one workspace — and adds a structured **debate protocol** so the agents converge on something useful instead of wandering.
-
-
 ## Requirements
 
 - macOS or Linux
@@ -56,6 +35,27 @@ parley doctor
 ```
 
 `claude` and `codex` are external prerequisites; `parley doctor` checks that they are present and prints upgrade/install hints.
+
+## Why
+
+You already have two strong coding assistants. They each have blind spots. Triangulating their opinions on a hard call usually means alt-tabbing, copy-pasting, and translating between contexts. parley does that for you in one workspace — and adds a structured **debate protocol** so the agents converge on something useful instead of wandering.
+
+
+## Demo
+
+### &raquo; Talk to either.  Or both.
+
+`@claude` or `@codex` targets one agent.  Plain text broadcasts to both.  Two takes, side-by-side, one workspace — no alt-tabbing, no copy-paste between terminals.
+
+<img src="./docs/images/intro.gif" alt="parley routing demo" />
+
+
+### &raquo; Or hand them a topic and walk away.
+
+`/discuss <topic>` makes them debate it out. They go back and forth automatically, each pushing back on the other's claims, until both write `[done]` — then the joint recommendation lands in front of you. One command, then hands-off.
+
+<img src="./docs/images/discuss.gif" alt="parley /discuss demo" />
+
 
 ## Commands (inside the relay pane)
 
