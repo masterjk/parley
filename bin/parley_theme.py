@@ -79,10 +79,10 @@ THEMES: dict[str, dict[str, str]] = {
         "ready": "green bold", "init": "yellow bold", "time": "yellow",
         "edit": "yellow bold", "effort": "white", "mode": "magenta bold",
     },
-    # Light terminal backgrounds: dark text, darker-hued accents that stay
-    # legible on white.
+    # Light theme: pure-white background, dark text, darker-hued accents that
+    # stay legible on white.
     "daybreak": {
-        "bg": "253", "text": "236", "dim": "245", "separator": "250",
+        "bg": "#ffffff", "text": "236", "dim": "245", "separator": "250",
         "title": "26 bold", "version": "61",
         "claude": "124", "codex": "30", "accent": "92 bold",
         "ready": "28 bold", "init": "166 bold", "time": "94",
