@@ -101,6 +101,12 @@ CLAUDE_PANE=$(tmux display-message -t "$SESSION" -p '#{pane_id}')
 tmux set-option -t "$SESSION" mouse on
 tmux set-option -t "$SESSION" history-limit 50000
 
+# Theme-derived tmux colors (PARLEY_TMUX_*), used below for the copy popup, the
+# pane-border labels, and tmux's built-in bottom status line. Sourced once here
+# so it's available throughout; defaults below keep things working if the
+# resolver is unavailable.
+eval "$(python3 "$BIN_DIR/parley_theme.py" --tmux-export 2>/dev/null)" || true
+
 # Auto-copy mouse selections to the system clipboard. tmux's default fills
 # only its own paste buffer; piping the selection through the OS clipboard
 # tool on drag-release makes the selection available to paste (Cmd-V / Ctrl-V)
@@ -120,11 +126,10 @@ else
   PARLEY_CLIP=""
 fi
 if [ -n "$PARLEY_CLIP" ]; then
-  # Popup colors follow the active theme (PARLEY_TMUX_POPUP_BG/FG). The popup
-  # binding is baked at launch, so its color reflects the theme at start time;
-  # a live /theme switch recolors the bar/panels/prompt but the popup picks up
-  # the new color on the next launch.
-  eval "$(python3 "$BIN_DIR/parley_theme.py" --tmux-export 2>/dev/null)" || true
+  # Popup colors follow the active theme (PARLEY_TMUX_POPUP_BG/FG, sourced
+  # above). The popup binding is baked at launch, so its color reflects the
+  # theme at start time; a live /theme switch recolors the bar/panels/prompt
+  # but the popup picks up the new color on the next launch.
   : "${PARLEY_TMUX_POPUP_BG:=green}" "${PARLEY_TMUX_POPUP_FG:=black}"
 
   # On a successful copy, announce it. tmux >= 3.2 has display-popup, so we
@@ -236,6 +241,15 @@ tmux set-option -t "$SESSION" pane-border-status top
 PARLEY_BORDER_FMT="$(python3 "$BIN_DIR/parley_theme.py" --pane-border-format 2>/dev/null)"
 [ -z "$PARLEY_BORDER_FMT" ] && PARLEY_BORDER_FMT='#{?#{==:#{@parley_label},},,#[align=left fg=colour87 bold] #{@parley_label} #[default]}'
 tmux set-option -t "$SESSION" pane-border-format "$PARLEY_BORDER_FMT"
+
+# Theme tmux's built-in bottom status line to match the top strip (relay.py
+# re-applies this on a live /theme switch). Skipped if the resolver was
+# unavailable above, leaving tmux's default status line.
+if [ -n "${PARLEY_TMUX_BG:-}" ]; then
+  tmux set-option -t "$SESSION" status-style "bg=${PARLEY_TMUX_BG},fg=${PARLEY_TMUX_TEXT}"
+  tmux set-option -t "$SESSION" window-status-current-style "fg=${PARLEY_TMUX_ACCENT},bold"
+fi
+
 tmux set-option -p -t "$CLAUDE_PANE" @parley_label '[CLAUDE]'
 tmux set-option -p -t "$CODEX_PANE"  @parley_label '[CODEX]'
 tmux set-option -p -t "$RELAY_PANE"  @parley_label '[CAPTAIN]'

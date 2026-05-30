@@ -344,9 +344,22 @@ def apply_theme_to_tmux() -> None:
     except (subprocess.CalledProcessError, OSError):
         session_name = ""
     if session_name:
+        theme = parley_theme.resolve()
         subprocess.run(
             ["tmux", "set-option", "-t", session_name, "pane-border-format",
              parley_theme.pane_border_format()],
+            stderr=subprocess.DEVNULL,
+        )
+        # tmux's built-in bottom status line, to match the top strip.
+        subprocess.run(
+            ["tmux", "set-option", "-t", session_name, "status-style",
+             f"bg={parley_theme.tmux_color(theme['bg'])},"
+             f"fg={parley_theme.tmux_color(theme['text'])}"],
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["tmux", "set-option", "-t", session_name, "window-status-current-style",
+             f"fg={parley_theme.tmux_color(theme['accent'])},bold"],
             stderr=subprocess.DEVNULL,
         )
     try:

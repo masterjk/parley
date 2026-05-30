@@ -402,6 +402,8 @@ def tmux_export(name: str | None = None) -> str:
     """tmux color tokens + prompt_toolkit strings for borders/popup/prompt."""
     theme = resolve(name)
     out = [
+        f"PARLEY_TMUX_BG='{tmux_color(theme['bg'])}'",
+        f"PARLEY_TMUX_TEXT='{tmux_color(theme['text'])}'",
         f"PARLEY_TMUX_TITLE='{tmux_color(theme['title'])}'",
         f"PARLEY_TMUX_CLAUDE='{tmux_color(theme['claude'])}'",
         f"PARLEY_TMUX_CODEX='{tmux_color(theme['codex'])}'",
