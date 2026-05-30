@@ -120,6 +120,13 @@ else
   PARLEY_CLIP=""
 fi
 if [ -n "$PARLEY_CLIP" ]; then
+  # Popup colors follow the active theme (PARLEY_TMUX_POPUP_BG/FG). The popup
+  # binding is baked at launch, so its color reflects the theme at start time;
+  # a live /theme switch recolors the bar/panels/prompt but the popup picks up
+  # the new color on the next launch.
+  eval "$(python3 "$BIN_DIR/parley_theme.py" --tmux-export 2>/dev/null)" || true
+  : "${PARLEY_TMUX_POPUP_BG:=green}" "${PARLEY_TMUX_POPUP_FG:=black}"
+
   # On a successful copy, announce it. tmux >= 3.2 has display-popup, so we
   # flash a small box right at the mouse (-x M -y M) — where the user's eyes
   # already are — far more obvious than a status-line toast. Older tmux falls
@@ -141,13 +148,13 @@ if [ -n "$PARLEY_CLIP" ]; then
   TMUX_NUM=$(( ${TMUX_MAJOR:-0} * 100 + TMUX_MINOR ))
   if [ "$TMUX_NUM" -ge 304 ]; then
     # tmux 3.4+ has the popup style flags (-s content, -S border, -b lines):
-    # a solid green block with black bold text and a rounded green border, so
-    # the toast reads as a highlighted (inverse) chip at the mouse.
-    PARLEY_NOTIFY="display-popup -E -b rounded -s 'bg=green,fg=black,bold' -S 'fg=black,bg=green' -w 30 -h 3 -x M -y M \"printf '  ✓  Copied to clipboard  '; sleep 0.6\""
+    # a solid 'ready'-colored block with contrasting bold text and matching
+    # rounded border, so the toast reads as a highlighted chip at the mouse.
+    PARLEY_NOTIFY="display-popup -E -b rounded -s 'bg=${PARLEY_TMUX_POPUP_BG},fg=${PARLEY_TMUX_POPUP_FG},bold' -S 'fg=${PARLEY_TMUX_POPUP_FG},bg=${PARLEY_TMUX_POPUP_BG}' -w 30 -h 3 -x M -y M \"printf '  ✓  Copied to clipboard  '; sleep 0.6\""
   else
     # Older tmux (no popup, or popup without style flags): bright inline-styled
-    # status message — green background, black bold text — at the bottom.
-    PARLEY_NOTIFY="display-message \"#[bg=green,fg=black,bold]  ✓  Copied to clipboard  #[default]\""
+    # status message in the theme's ready colors, at the bottom.
+    PARLEY_NOTIFY="display-message \"#[bg=${PARLEY_TMUX_POPUP_BG},fg=${PARLEY_TMUX_POPUP_FG},bold]  ✓  Copied to clipboard  #[default]\""
   fi
   PARLEY_COPY_CONF=$(mktemp -t parley-copy.XXXXXX)
   # Four bindings, all routed through the same clipboard tool + notify:
@@ -223,8 +230,12 @@ CODEX_PANE=$(tmux display-message -t "$SESSION" -p '#{pane_id}')
 # and the discussion pane sets its own @parley_label at creation time
 # (see relay.py cmd_discuss).
 tmux set-option -t "$SESSION" pane-border-status top
-tmux set-option -t "$SESSION" pane-border-format \
-  '#{?#{==:#{@parley_label},},,#[align=left fg=colour87 bold] #{@parley_label} #[default]}'
+# Label color follows the active theme's title color (relay.py re-applies this
+# same format on a live /theme switch). Fall back to the original if the
+# resolver is unavailable.
+PARLEY_BORDER_FMT="$(python3 "$BIN_DIR/parley_theme.py" --pane-border-format 2>/dev/null)"
+[ -z "$PARLEY_BORDER_FMT" ] && PARLEY_BORDER_FMT='#{?#{==:#{@parley_label},},,#[align=left fg=colour87 bold] #{@parley_label} #[default]}'
+tmux set-option -t "$SESSION" pane-border-format "$PARLEY_BORDER_FMT"
 tmux set-option -p -t "$CLAUDE_PANE" @parley_label '[CLAUDE]'
 tmux set-option -p -t "$CODEX_PANE"  @parley_label '[CODEX]'
 tmux set-option -p -t "$RELAY_PANE"  @parley_label '[CAPTAIN]'

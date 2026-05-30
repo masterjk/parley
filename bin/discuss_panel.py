@@ -26,6 +26,7 @@ import time
 from pathlib import Path
 
 from parley_paths import dialog_log_path, dialog_pid_path, dialog_state_path
+from parley_theme import palette
 
 STATE_PATH = dialog_state_path()
 LOG_PATH = dialog_log_path()
@@ -34,7 +35,10 @@ PID_PATH = dialog_pid_path()
 SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 FRAME_SECS = 0.12
 
-# 256-color palette (matches bin/status.sh).
+# Colors come from the active theme (parley_theme). These module globals are
+# seeded with the harbor palette as a fallback, then overwritten by
+# load_colors() — at startup and, on a throttle, inside the render loop so a
+# live `/theme` switch recolors the panel without restarting the discussion.
 RESET = "\033[0m"
 PINK = "\033[1;38;5;213m"
 CLAUDECOL = "\033[38;5;209m"   # salmon
@@ -43,7 +47,27 @@ TIMECOL = "\033[38;5;221m"     # amber
 DIM = "\033[38;5;244m"
 DEF = "\033[38;5;252m"
 GREEN = "\033[1;38;5;120m"
-SPINCOL = "\033[1;38;5;213m"   # pink spinner
+SPINCOL = "\033[1;38;5;213m"   # accent spinner
+
+# Reload the theme palette this often (frames). 25 * FRAME_SECS ≈ 3s.
+THEME_REFRESH_EVERY = 25
+
+
+def load_colors() -> None:
+    """Refresh the color globals from the active theme. Keeps existing values
+    if the resolver is unavailable, so the panel never crashes on a theme."""
+    global RESET, PINK, CLAUDECOL, CODEXCOL, TIMECOL, DIM, DEF, GREEN, SPINCOL
+    try:
+        p = palette()
+    except Exception:
+        return
+    RESET, PINK = p["reset"], p["accent"]
+    CLAUDECOL, CODEXCOL = p["claude"], p["codex"]
+    TIMECOL, DIM, DEF = p["time"], p["dim"], p["text"]
+    GREEN, SPINCOL = p["ready"], p["accent"]
+
+
+load_colors()
 
 
 def read_state() -> dict:
@@ -182,6 +206,8 @@ def main() -> None:
     frame = 0
     try:
         while True:
+            if frame % THEME_REFRESH_EVERY == 0:
+                load_colors()  # pick up a live `/theme` switch
             sys.stdout.write(render(frame))
             sys.stdout.flush()
             frame += 1

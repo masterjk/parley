@@ -27,23 +27,16 @@ CODEX_VER=$(codex --version 2>/dev/null | awk '{print $NF}')
 CLAUDE_MODEL=""; CLAUDE_EFFORT=""; CLAUDE_MODE=""
 CODEX_MODEL=""; CODEX_EFFORT=""
 
-# 256-color palette
+# Theme palette comes from parley_theme.py (single source of truth — it emits
+# RESET/BG/TITLE/VER/... as ready-to-use escapes with the theme background
+# composited in). Re-loaded on the refresh throttle below, so a `/theme` switch
+# recolors the bar live without a restart. RESET is hard-defaulted first so the
+# cursor-restore trap stays safe even if the loader ever fails.
 RESET=$'\033[0m'
-BG=$'\033[48;5;235m'
-TITLE=$'\033[48;5;235;1;38;5;87m'
-VER=$'\033[48;5;235;38;5;67m'
-SEP=$'\033[48;5;235;38;5;240m'
-CLAUDECOL=$'\033[48;5;235;38;5;209m'  # claude label (salmon)
-CODEXCOL=$'\033[48;5;235;38;5;79m'    # codex label (teal)
-TIMECOL=$'\033[48;5;235;38;5;221m'
-EDITCOL=$'\033[48;5;235;1;38;5;228m'
-EFFORTCOL=$'\033[48;5;235;38;5;180m'  # effort tier (warm tan)
-MODECOL=$'\033[48;5;235;1;38;5;213m'  # fast mode flag (bold pink)
-DIMCOL=$'\033[48;5;235;38;5;244m'     # parenthesized version (dim)
-DEF=$'\033[48;5;235;38;5;252m'
-READY=$'\033[48;5;235;1;38;5;120m'   # bold green
-DISC=$'\033[48;5;235;1;38;5;213m'    # bold pink
-INIT=$'\033[48;5;235;1;38;5;215m'    # bold orange
+load_theme() {
+  eval "$(python3 "$BIN_DIR/parley_theme.py" --shell-export 2>/dev/null)" || true
+}
+load_theme
 
 SPIN=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
 SLEN=${#SPIN[@]}
@@ -67,6 +60,8 @@ while true; do
   # Re-read live model/effort on the throttle (and on the very first frame).
   if [ $(( refresh % REFRESH_EVERY )) -eq 0 ]; then
     eval "$(python3 "$BIN_DIR/agent_info.py" 2>/dev/null)" || true
+    # Pick up a live `/theme` switch on the same cadence (~3s).
+    load_theme
   fi
   if [ $(( refresh % EDIT_REFRESH_EVERY )) -eq 0 ]; then
     eval "$(python3 "$BIN_DIR/edit_owner.py" status --shell 2>/dev/null)" || true

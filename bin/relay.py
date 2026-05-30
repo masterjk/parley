@@ -25,6 +25,7 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
 from prompt_toolkit.validation import ValidationError, Validator
 
+import parley_theme
 from parley_paths import (
     agents_ready_path,
     dialog_log_path,
@@ -57,16 +58,20 @@ TARGETS = ["@claude", "@codex"]
 # how often Captain reaches for each.
 COMMANDS = [
     "/discuss",
+    "/theme",
     "/status",
     "/quit",
 ]
-COMPLETION_MENU_ROWS = max(len(TARGETS), len(COMMANDS)) + 1
+COMPLETION_MENU_ROWS = max(len(TARGETS), len(COMMANDS), len(parley_theme.list_themes())) + 1
 
-STYLE = Style.from_dict({
-    "prompt": "ansicyan bold",
-    "completion-menu.completion": "bg:#333333 #ffffff",
-    "completion-menu.completion.current": "bg:#0066cc #ffffff bold",
-})
+
+def make_style() -> Style:
+    """Prompt style sourced from the active theme (its 'title' color)."""
+    return Style.from_dict({
+        "prompt": parley_theme.pt_color(parley_theme.resolve()["title"]),
+        "completion-menu.completion": "bg:#333333 #ffffff",
+        "completion-menu.completion.current": "bg:#0066cc #ffffff bold",
+    })
 
 
 class RelayCompleter(Completer):
@@ -97,6 +102,11 @@ class RelayCompleter(Completer):
             between = text[len("/discuss "):cut]
             if between.strip() == "":
                 yield from self._yield_token_matches(token, TARGETS)
+            return
+
+        # Case 3: `/theme <name>` — complete theme names as the first argument.
+        if text.startswith("/theme ") and text[len("/theme "):] == token:
+            yield from self._yield_token_matches(token, parley_theme.list_themes())
 
     def _yield_token_matches(self, token, options):
         prefix = token.lower()
@@ -259,9 +269,11 @@ def cmd_discuss(topic: str) -> None:
     ], text=True).strip()
     Path(DIALOG_PANE_FILE).write_text(new_pane)
 
-    # Pink border around the dialog pane — visually pops in.
+    # Accent border around the dialog pane — visually pops in. Color follows
+    # the active theme (harbor's accent is the original pink).
+    accent = parley_theme.tmux_color(parley_theme.resolve()["accent"])
     subprocess.run(
-        ["tmux", "select-pane", "-t", new_pane, "-P", "fg=colour213"],
+        ["tmux", "select-pane", "-t", new_pane, "-P", f"fg={accent}"],
         stderr=subprocess.DEVNULL,
     )
     # Border label. @parley_label is the user option that pane-border-format
@@ -318,6 +330,56 @@ def cmd_discuss_off() -> None:
         Path(DIALOG_PID_FILE).unlink(missing_ok=True)
     kill_dialog_pane()
     print("Discussion closed.")
+
+
+def apply_theme_to_tmux() -> None:
+    """Re-apply theme-dependent tmux styling after a live /theme switch: the
+    pane-border label color, and the discuss strip border if one is open. The
+    status bar and discuss panel reload their own colors on a throttle."""
+    try:
+        session_name = subprocess.check_output(
+            ["tmux", "display-message", "-p", "#{session_name}"], text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (subprocess.CalledProcessError, OSError):
+        session_name = ""
+    if session_name:
+        subprocess.run(
+            ["tmux", "set-option", "-t", session_name, "pane-border-format",
+             parley_theme.pane_border_format()],
+            stderr=subprocess.DEVNULL,
+        )
+    try:
+        pane = Path(DIALOG_PANE_FILE).read_text().strip()
+    except FileNotFoundError:
+        pane = ""
+    if pane:
+        accent = parley_theme.tmux_color(parley_theme.resolve()["accent"])
+        subprocess.run(
+            ["tmux", "select-pane", "-t", pane, "-P", f"fg={accent}"],
+            stderr=subprocess.DEVNULL,
+        )
+
+
+def cmd_theme(arg: str, session) -> None:
+    """`/theme` lists themes + shows the active one; `/theme <name>` switches,
+    persists the choice to the config, and re-applies live."""
+    name = arg.strip().lower()
+    if not name:
+        cur = parley_theme.current_theme()
+        print("Themes (* = active):")
+        for t in parley_theme.list_themes():
+            print(f"   {'*' if t == cur else ' '} {t}")
+        print("Switch with: /theme <name>")
+        return
+    if not parley_theme.set_theme(name):
+        print(f"Unknown theme '{name}'. "
+              f"Available: {', '.join(parley_theme.list_themes())}")
+        return
+    apply_theme_to_tmux()
+    if session is not None:
+        session.style = make_style()  # prompt_toolkit reads session.style live
+    print(f"Theme → {name}. Config saved; status bar and panels recolor within ~3s.")
 
 
 def cmd_status() -> None:
@@ -412,6 +474,7 @@ def print_startup_banner() -> None:
     print(f"\nAgent relay ready.")
     print(f"  @claude / @codex for a specific agent; unprefixed → both. Tab cycles.")
     print(f"  /discuss [@claude|@codex] <topic>   start an agent-to-agent discussion")
+    print(f"  /theme [name]          switch color theme (no name → list)")
     print(f"  /quit                  kill the tmux session\n")
 
 
@@ -445,7 +508,7 @@ def main() -> None:
         complete_while_typing=True,
         validator=AtValidator(),
         validate_while_typing=False,
-        style=STYLE,
+        style=make_style(),
         reserve_space_for_menu=COMPLETION_MENU_ROWS,
         key_bindings=kb,
     )
@@ -477,6 +540,9 @@ def main() -> None:
                 cmd_discuss_off()
             else:
                 cmd_discuss(arg)
+            continue
+        if command == "/theme":
+            cmd_theme(arg, session)
             continue
         if command == "/status":
             cmd_status()
