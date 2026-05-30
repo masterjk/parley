@@ -49,7 +49,7 @@ raw color. Roles:
 
 ```
 bg text dim separator title version
-claude codex accent ready init time edit effort mode
+claude codex accent ready init time effort mode
 ```
 
 A color spec is `"<color> [attr...]"` where `<color>` is a 256-palette index

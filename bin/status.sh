@@ -46,9 +46,6 @@ trap 'printf "\033[?25h%s\n" "$RESET"; exit 0' EXIT INT TERM
 
 # ~3s between agent-info refreshes (REFRESH_EVERY * sleep 0.15).
 REFRESH_EVERY=20
-EDIT_REFRESH_EVERY=5
-
-EDIT_OWNER="idle"; EDIT_NOTE=""; EDIT_AGE_SECONDS=0; EDIT_STALE=0; EDIT_STALE_OWNER=""
 
 i=0
 refresh=0
@@ -62,9 +59,6 @@ while true; do
     eval "$(python3 "$BIN_DIR/agent_info.py" 2>/dev/null)" || true
     # Pick up a live `/theme` switch on the same cadence (~3s).
     load_theme
-  fi
-  if [ $(( refresh % EDIT_REFRESH_EVERY )) -eq 0 ]; then
-    eval "$(python3 "$BIN_DIR/edit_owner.py" status --shell 2>/dev/null)" || true
   fi
   refresh=$(( refresh + 1 ))
 
@@ -120,17 +114,9 @@ while true; do
     STATE_PLAIN="READY"
   fi
 
-  if [ "${EDIT_OWNER:-idle}" = "idle" ]; then
-    EDIT_COLORED="${DEF}idle"
-    EDIT_PLAIN="idle"
-  else
-    EDIT_COLORED="${EDITCOL}${EDIT_OWNER}${DEF}"
-    EDIT_PLAIN="$EDIT_OWNER"
-  fi
-
   # Plain widths for padding math (escapes don't take visible cells)
   LEFT_PLAIN="  ${APP} ${VERSION}${AGENTS_PLAIN}"
-  RIGHT_PLAIN="${NOW}  │  editing: ${EDIT_PLAIN}  │  status: ${STATE_PLAIN}  "
+  RIGHT_PLAIN="${NOW}  │  status: ${STATE_PLAIN}  "
 
   # Use tmux's pane width — more reliable than tput inside a 1-row pane.
   COLS=$(tmux display-message -p -t "${TMUX_PANE:-}" '#{pane_width}' 2>/dev/null)
@@ -145,7 +131,6 @@ while true; do
   printf '%s' "$AGENTS_COLORED"
   printf '%*s' "$PAD" ""
   printf '%s%s%s  %s│%s  ' "$TIMECOL" "$NOW" "$DEF" "$SEP" "$DEF"
-  printf 'editing: %s  %s│%s  ' "$EDIT_COLORED" "$SEP" "$DEF"
   printf 'status: %s  ' "$STATE_COLORED"
   printf '\033[K%s' "$RESET"
 

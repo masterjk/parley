@@ -49,7 +49,6 @@ ROLES = (
     "ready",      # READY state, copy-success popup
     "init",       # INIT state
     "time",       # clock
-    "edit",       # edit-owner name
     "effort",     # effort tier
     "mode",       # fast-mode flag
 )
@@ -67,7 +66,7 @@ THEMES: dict[str, dict[str, str]] = {
         "title": "87 bold", "version": "67",
         "claude": "209", "codex": "79", "accent": "213 bold",
         "ready": "120 bold", "init": "215 bold", "time": "221",
-        "edit": "228 bold", "effort": "180", "mode": "213 bold",
+        "effort": "180", "mode": "213 bold",
     },
     # Inherit the terminal's own 16-color palette: parley wears whatever theme
     # the terminal already uses. "default" = the terminal's fg/bg.
@@ -77,7 +76,7 @@ THEMES: dict[str, dict[str, str]] = {
         "title": "cyan bold", "version": "blue",
         "claude": "magenta", "codex": "cyan", "accent": "blue bold",
         "ready": "green bold", "init": "yellow bold", "time": "yellow",
-        "edit": "yellow bold", "effort": "white", "mode": "magenta bold",
+        "effort": "white", "mode": "magenta bold",
     },
     # Light theme: pure-white background, dark text, darker-hued accents that
     # stay legible on white.
@@ -86,7 +85,7 @@ THEMES: dict[str, dict[str, str]] = {
         "title": "26 bold", "version": "61",
         "claude": "124", "codex": "30", "accent": "92 bold",
         "ready": "28 bold", "init": "166 bold", "time": "94",
-        "edit": "100 bold", "effort": "95", "mode": "92 bold",
+        "effort": "95", "mode": "92 bold",
     },
     # Grayscale UI; a single cyan accent reserved for live/active state.
     "mono": {
@@ -94,7 +93,7 @@ THEMES: dict[str, dict[str, str]] = {
         "title": "252 bold", "version": "245",
         "claude": "252", "codex": "247", "accent": "39 bold",
         "ready": "39 bold", "init": "39 bold", "time": "245",
-        "edit": "252 bold", "effort": "244", "mode": "39 bold",
+        "effort": "244", "mode": "39 bold",
     },
     # High-contrast, colorblind-safe: blue/orange agents (not red/green),
     # white text on near-black.
@@ -103,7 +102,7 @@ THEMES: dict[str, dict[str, str]] = {
         "title": "51 bold", "version": "45",
         "claude": "33 bold", "codex": "208 bold", "accent": "201 bold",
         "ready": "45 bold", "init": "226 bold", "time": "231",
-        "edit": "226 bold", "effort": "250", "mode": "201 bold",
+        "effort": "250", "mode": "201 bold",
     },
     # Neon on near-black.
     "synthwave": {
@@ -111,7 +110,7 @@ THEMES: dict[str, dict[str, str]] = {
         "title": "51 bold", "version": "141",
         "claude": "213", "codex": "51", "accent": "201 bold",
         "ready": "48 bold", "init": "214 bold", "time": "219",
-        "edit": "226 bold", "effort": "141", "mode": "201 bold",
+        "effort": "141", "mode": "201 bold",
     },
 }
 
@@ -359,7 +358,7 @@ def palette(name: str | None = None) -> dict[str, str]:
 _STATUS_VARS = {
     "TITLE": "title", "VER": "version", "SEP": "separator",
     "CLAUDECOL": "claude", "CODEXCOL": "codex", "TIMECOL": "time",
-    "EDITCOL": "edit", "EFFORTCOL": "effort", "MODECOL": "mode",
+    "EFFORTCOL": "effort", "MODECOL": "mode",
     "DIMCOL": "dim", "DEF": "text", "READY": "ready", "DISC": "accent",
     "INIT": "init",
 }
