@@ -384,10 +384,18 @@ def pane_border_format(name: str | None = None) -> str:
     Used by both start.sh (at launch) and relay.py (on a live /theme switch) so
     the [CLAUDE]/[CODEX]/[CAPTAIN]/[DISCUSS] labels recolor with the theme. Panes
     with no @parley_label (the status strip) render a blank border.
+
+    The #[...] style components MUST be space-separated, not comma-separated:
+    this string is the false-branch of a #{?cond,true,false} conditional whose
+    argument separator is the comma, so a comma inside #[...] breaks the
+    conditional (symptom: literal "bold]" leaking into the border).
     """
-    style = tmux_style(resolve(name)["title"])  # e.g. "fg=colour87,bold"
+    token, attrs = _parse(resolve(name)["title"])
+    bits = [f"fg={tmux_color(resolve(name)['title'])}"]
+    bits += [_ATTR_TMUX[a] for a in attrs if a in _ATTR_TMUX]
+    style = " ".join(bits)  # e.g. "fg=colour87 bold"
     return ("#{?#{==:#{@parley_label},},,"
-            "#[align=left," + style + "] #{@parley_label} #[default]}")
+            "#[align=left " + style + "] #{@parley_label} #[default]}")
 
 
 def tmux_export(name: str | None = None) -> str:
