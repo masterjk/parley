@@ -72,6 +72,11 @@ You already have two strong coding assistants. They each have blind spots. Trian
 
 Tab cycles autocomplete for both `@targets` and `/commands`.
 
+## Features
+
+<img src="./docs/images/clipboard.png" alt="Clipboard" width="600" />
+
+
 ## How?
 
 <p align="left">
