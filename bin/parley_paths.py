@@ -60,6 +60,10 @@ def dialog_result_path() -> Path:
     return state_dir() / "dialog.result"
 
 
+def dialog_state_path() -> Path:
+    return state_dir() / "dialog.state.json"
+
+
 def dialog_log_path() -> Path:
     return log_dir() / "dialog.log"
 
@@ -134,6 +138,7 @@ _SHELL_EXPORTS = {
     "PARLEY_TRANSCRIPT": transcript_path,
     "PARLEY_EDIT_OWNER": edit_owner_path,
     "PARLEY_DIALOG_RESULT": dialog_result_path,
+    "PARLEY_DIALOG_STATE": dialog_state_path,
     "PARLEY_DIALOG_LOG": dialog_log_path,
     "PARLEY_STARTUP_LOG": startup_log_path,
     "PARLEY_DIALOG_PID": dialog_pid_path,

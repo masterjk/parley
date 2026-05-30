@@ -2,21 +2,27 @@
 """Dialogue orchestrator: makes Claude and Codex discuss a topic between themselves.
 
 Usage:
-  discuss.py <topic...>
+  discuss.py [@claude|@codex] <topic...>
+
+  The optional leading @claude or @codex forces who speaks first; without it
+  the starter is chosen randomly (the original behavior).
 
 Environment:
   CLAUDE_PANE, CODEX_PANE  tmux pane ids
   WORK_DIR                              parley project root
 
 Behavior:
-  1. Randomly choose a first speaker and send the kickoff with the topic.
+  1. Pick the first speaker (explicit @claude/@codex, else random) and send
+     the kickoff with the topic.
   2. Poll Claude's session JSONL. When its turn is complete (quiescent for QUIET_SECS),
      extract assistant text, forward to Codex.
   3. Poll Codex's session JSONL similarly. Forward back to Claude.
   4. If a turn contains `[done]`, the orchestrator asks the other agent to confirm.
      Two-sided `[done]` is required to end the discussion.
-  5. Hard stops: MAX_TURNS reached, RESPONSE_TIMEOUT exceeded waiting for an agent,
-     SIGTERM received.
+  5. The discussion runs with no turn cap and no per-turn timeout — it ends only
+     when both agents agree (`[done]` x2) or Captain stops it (SIGTERM, via
+     `/discuss off`). Live progress (elapsed time, turn tallies, who we're
+     waiting on) is published to the dialog state file for the discuss panel.
   6. Final result is written to the runtime dialog result file and logged.
 """
 from __future__ import annotations
@@ -35,8 +41,6 @@ from pathlib import Path
 # Tunables
 QUIET_SECS = 3              # turn ends when JSONL stops changing this long
 POLL_INTERVAL = 1.0
-RESPONSE_TIMEOUT = 90       # give up if an agent takes longer than this
-MAX_TURNS = 10
 DONE_RE = re.compile(r"\[done\]", re.IGNORECASE)
 
 from parley_paths import (
@@ -44,6 +48,7 @@ from parley_paths import (
     dialog_log_path,
     dialog_pid_path,
     dialog_result_path,
+    dialog_state_path,
     ensure_runtime_dirs,
     latest_session_for,
 )
@@ -55,9 +60,30 @@ CURSORS_DIR = cursors_dir()
 LOG_PATH = dialog_log_path()
 RESULT_PATH = dialog_result_path()
 PID_PATH = dialog_pid_path()
+STATE_PATH = dialog_state_path()
 
 CLAUDE_PANE = os.environ.get("CLAUDE_PANE", "")
 CODEX_PANE = os.environ.get("CODEX_PANE", "")
+
+# Live discussion state, mirrored to STATE_PATH for the discuss panel to render.
+_state: dict = {}
+
+
+def write_state(**updates) -> None:
+    """Merge `updates` into the discussion state and write it atomically.
+
+    The discuss panel polls STATE_PATH several times a second; an atomic
+    write (temp file + os.replace) guarantees it never reads a half-written
+    file and sees garbage.
+    """
+    _state.update(updates)
+    _state["updated_at"] = time.time()
+    tmp = STATE_PATH.parent / (STATE_PATH.name + ".tmp")
+    try:
+        tmp.write_text(json.dumps(_state))
+        os.replace(tmp, STATE_PATH)
+    except OSError:
+        pass
 
 
 def log(msg: str) -> None:
@@ -126,17 +152,21 @@ def read_assistant_turns(agent: str, after_ts: str):
 
 
 def wait_for_turn(agent: str, after_ts: str) -> tuple[str, str]:
-    """Wait until `agent` produces a complete assistant turn after `after_ts`.
+    """Block until `agent` produces a complete assistant turn after `after_ts`.
 
     A turn is complete when the session file has been quiescent for QUIET_SECS
     AND there is at least one assistant text entry after `after_ts`.
-    Returns (latest_ts, concatenated_text). Raises TimeoutError after RESPONSE_TIMEOUT.
+    Returns (latest_ts, concatenated_text).
+
+    There is no timeout: an agent may legitimately think or run tools for a
+    long time, so we wait indefinitely. The discuss panel surfaces elapsed
+    time so a human can decide when an agent is genuinely stuck and stop the
+    discussion with `/discuss off`.
     """
     path = session_path(agent)
-    deadline = time.time() + RESPONSE_TIMEOUT
     last_mtime = path.stat().st_mtime
     last_change = time.time()
-    while time.time() < deadline:
+    while True:
         time.sleep(POLL_INTERVAL)
         try:
             mtime = path.stat().st_mtime
@@ -160,7 +190,6 @@ def wait_for_turn(agent: str, after_ts: str) -> tuple[str, str]:
             # Only non-text entries (tool calls). Keep waiting for actual text.
             continue
         return latest_ts, text
-    raise TimeoutError(f"{agent} did not respond within {RESPONSE_TIMEOUT}s")
 
 
 def send_to_pane(pane: str, msg: str) -> None:
@@ -205,8 +234,13 @@ def cleanup() -> None:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        sys.exit("usage: discuss.py <topic...>")
-    topic = " ".join(sys.argv[1:]).strip()
+        sys.exit("usage: discuss.py [@claude|@codex] <topic...>")
+
+    args = sys.argv[1:]
+    starter: str | None = None
+    if args and args[0].lower() in ("@claude", "@codex"):
+        starter = args.pop(0).lower().lstrip("@")
+    topic = " ".join(args).strip()
     if not topic:
         sys.exit("empty topic")
 
@@ -217,53 +251,79 @@ def main() -> None:
     PID_PATH.write_text(str(os.getpid()))
     RESULT_PATH.unlink(missing_ok=True)
 
-    signal.signal(signal.SIGTERM, lambda *_: (log("SIGTERM received, exiting"), cleanup(), sys.exit(130)))
-    signal.signal(signal.SIGINT,  lambda *_: (log("SIGINT received, exiting"),  cleanup(), sys.exit(130)))
+    def on_stop(*_):
+        log("stop signal received — ending discussion")
+        write_state(phase="ended", ended_reason="stopped",
+                    ended_at=time.time(), waiting_for=None, done_pending_by=None)
+        cleanup()
+        sys.exit(130)
+
+    signal.signal(signal.SIGTERM, on_stop)
+    signal.signal(signal.SIGINT, on_stop)
 
     try:
-        run(topic)
+        run(topic, starter=starter)
     finally:
         cleanup()
 
 
-def run(topic: str) -> None:
+def run(topic: str, starter: str | None = None) -> None:
     kickoff_template = (BIN_DIR / "prompts" / "discuss_kickoff.txt").read_text()
     kickoff = kickoff_template.replace("{topic}", topic)
 
     log(f"discussion armed. topic: {topic}")
-    log(f"max turns: {MAX_TURNS}, response timeout: {RESPONSE_TIMEOUT}s")
+    log("no turn limit — runs until both agents agree or Captain stops it.")
 
     # Anchor cursors at the current latest assistant message so we ignore prior history.
     claude_cur = current_max_ts("claude")
     codex_cur = current_max_ts("codex")
 
-    # Pick a random first speaker
-    first = random.choice(["claude", "codex"])
+    # First speaker: explicit if @claude/@codex was given, otherwise random.
+    first = starter if starter in ("claude", "codex") else random.choice(["claude", "codex"])
     second = "codex" if first == "claude" else "claude"
+    log(f"first speaker: {first}" + (" (explicit)" if starter else " (random)"))
     panes = {"claude": CLAUDE_PANE, "codex": CODEX_PANE}
     cursors = {"claude": claude_cur, "codex": codex_cur}
+    counts = {"claude": 0, "codex": 0}
+    speakers = [first, second]
+
+    now = time.time()
+    write_state(
+        topic=topic,
+        started_at=now,
+        ended_at=None,
+        turn=0,
+        claude_turns=0,
+        codex_turns=0,
+        waiting_for=first,
+        waiting_since=now,
+        phase="waiting",
+        done_pending_by=None,
+        ended_reason=None,
+    )
 
     log(f"turn 1: kicking off {first} with topic")
     send_to_pane(panes[first], kickoff)
-
-    speakers = [first, second]
 
     done_proposed_by: str | None = None
     done_recommendation: str = ""
     final_text: str | None = None
     final_speaker: str | None = None
 
-    for turn in range(1, MAX_TURNS + 1):
+    turn = 0
+    while True:
+        turn += 1
         speaker = speakers[(turn - 1) % 2]
         listener = speakers[turn % 2]
+        write_state(turn=turn, waiting_for=speaker, waiting_since=time.time(),
+                    phase="waiting", done_pending_by=done_proposed_by)
         log(f"turn {turn}: waiting for {speaker}")
-        try:
-            ts, text = wait_for_turn(speaker, cursors[speaker])
-        except TimeoutError as e:
-            log(f"timeout: {e}")
-            summarize("timeout", turn, speaker, text=None, recommendation=done_recommendation)
-            return
+        ts, text = wait_for_turn(speaker, cursors[speaker])
         cursors[speaker] = ts
+        counts[speaker] += 1
+        write_state(claude_turns=counts["claude"], codex_turns=counts["codex"],
+                    waiting_for=listener, waiting_since=time.time(),
+                    phase="forwarding")
         snippet = text.replace("\n", " ")[:120]
         log(f"turn {turn}: {speaker} replied — {snippet}...")
 
@@ -287,15 +347,12 @@ def run(topic: str) -> None:
             log(f"turn {turn}: {speaker} proposed [done]. awaiting {listener} confirmation.")
             # fall through to forward with done-pending flag
 
-        if turn == MAX_TURNS:
-            log(f"reached max turns ({MAX_TURNS}). stopping.")
-            summarize("max-turns", turn, speaker, text=text, recommendation=done_recommendation)
-            return
-
         # Forward to the listener
         msg = format_forward(speaker, turn, text, done_pending_from=done_proposed_by if done_proposed_by == speaker else None)
         send_to_pane(panes[listener], msg)
 
+    write_state(phase="ended", ended_reason="complete", ended_at=time.time(),
+                waiting_for=None, done_pending_by=None)
     summarize(
         "complete",
         turn,
@@ -325,12 +382,6 @@ def summarize(
             lines.append(f"\n{proposed_by} proposed done. {last_speaker} confirmed. Final recommendation sent.")
         lines.append(f"\nFinal recommendation (from {last_speaker}):\n")
         lines.append(recommendation.strip())
-    elif reason == "max-turns":
-        lines.append(f"\nLast position ({last_speaker}):\n")
-        lines.append((text or "").strip())
-    elif reason == "timeout":
-        lines.append(f"\n{last_speaker or 'an agent'} timed out. Last recommendation in flight:\n")
-        lines.append(recommendation or "(none)")
     lines.append("")
     lines.append("=" * 60)
     summary = "\n".join(lines)

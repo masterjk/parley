@@ -153,10 +153,14 @@ sed "s|__PARLEY_BIN__|$BIN_DIR|g" "$BIN_DIR/prompts/codex.txt"  > "$CODEX_PROMPT
 # This makes the intro invisible in the pane (no fake "user message" turn)
 # and removes the previous race where pasted intro text would dismiss the
 # startup trust-this-folder dialog and kill the agent process.
+# Auto-restart wrapper: if the user accidentally exits the agent with Ctrl-C at
+# an empty prompt (the agent's own native gesture), the pane respawns it instead
+# of leaving an idle pane. The 1s sleep avoids a tight crash loop if the agent
+# fails fast (auth error, etc.). Stop with `/quit` from the Captain.
 tmux respawn-pane -k -t "$CLAUDE_PANE" \
-  "claude --append-system-prompt-file '$CLAUDE_PROMPT_RENDERED'"
+  "while :; do claude --append-system-prompt-file '$CLAUDE_PROMPT_RENDERED'; sleep 1; done"
 tmux respawn-pane -k -t "$CODEX_PANE" \
-  "codex --no-alt-screen -c 'model_instructions_file=\"$CODEX_PROMPT_RENDERED\"'"
+  "while :; do codex --no-alt-screen -c 'model_instructions_file=\"$CODEX_PROMPT_RENDERED\"'; sleep 1; done"
 
 : > "$PARLEY_STARTUP_LOG"
 
